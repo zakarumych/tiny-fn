@@ -134,7 +134,7 @@ pub const DEFAULT_INLINE_SIZE: usize = 24;
 pub mod private {
     pub use alloc::boxed::Box;
     pub use core::{
-        mem::{align_of, size_of, transmute, ManuallyDrop},
+        mem::{align_of, size_of, transmute, ManuallyDrop, MaybeUninit},
         ptr::{copy_nonoverlapping, drop_in_place, read, NonNull},
     };
 
@@ -147,12 +147,20 @@ pub mod private {
         pub call: C,
     }
 
-    #[repr(align(16))]
-    pub struct InlineStorage<const INLINE_SIZE: usize> {
-        pub bytes: [u8; INLINE_SIZE],
+    #[derive(Clone, Copy)]
+    #[allow(dead_code)]
+    pub union Element {
+        pub integer: usize,
+        pub pointer: *mut u8,
     }
 
-    pub type DropFn<const INLINE_SIZE: usize> = unsafe fn(core::ptr::NonNull<[u8; INLINE_SIZE]>);
+    #[repr(align(16))]
+    pub struct InlineStorage<const INLINE_SIZE: usize> {
+        pub bytes: [core::mem::MaybeUninit<u8>; INLINE_SIZE],
+    }
+
+    pub type DropFn<const INLINE_SIZE: usize> =
+        unsafe fn(core::ptr::NonNull<[core::mem::MaybeUninit<u8>; INLINE_SIZE]>);
 
     #[repr(C)]
     pub struct InlineFn<const INLINE_SIZE: usize> {
@@ -179,7 +187,7 @@ macro_rules! private_tiny_fn {
                 if self.boxed_if_zero == 0 {
                     (*self.boxed.closure)($($arg_name),*)
                 } else {
-                    let call_fn: unsafe fn($crate::private::NonNull<[u8; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)? = $crate::private::transmute(self.inline.vtable.call);
+                    let call_fn: CallFn< $($($t,)+)? INLINE_SIZE> = $crate::private::transmute(self.inline.vtable.call);
                     call_fn(
                         $crate::private::NonNull::from(&self.inline.storage.bytes),
                         $($arg_name),*
@@ -195,7 +203,7 @@ macro_rules! private_tiny_fn {
                 if self.boxed_if_zero == 0 {
                     (*(*self.boxed).closure)($($arg_name),*)
                 } else {
-                    let call_fn: unsafe fn($crate::private::NonNull<[u8; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)? = $crate::private::transmute(self.inline.vtable.call);
+                    let call_fn: CallFn< $($($t,)+)? INLINE_SIZE> = $crate::private::transmute(self.inline.vtable.call);
                     call_fn(
                         $crate::private::NonNull::from(&mut (*self.inline).storage.bytes),
                         $($arg_name),*
@@ -288,7 +296,7 @@ macro_rules! tiny_fn {
     )*) => {
         $(
             const _: () = {
-                type CallFn< $($($t, )+)? const INLINE_SIZE: usize> = unsafe fn($crate::private::NonNull<[u8; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)?;
+                type CallFn< $($($t, )+)? const INLINE_SIZE: usize> = unsafe fn($crate::private::NonNull<[$crate::private::MaybeUninit<u8>; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)?;
 
                 #[repr(C)]
                 struct BoxedFn <'closure $($(, $t)+)?> {
@@ -326,25 +334,25 @@ macro_rules! tiny_fn {
 
                         if size_fits && align_fits {
                             let mut storage = $crate::private::InlineStorage {
-                                bytes: [0; INLINE_SIZE],
+                                bytes: [$crate::private::MaybeUninit::uninit(); INLINE_SIZE],
                             };
 
                             let f = $crate::private::ManuallyDrop::new(f);
                             unsafe {
                                 $crate::private::copy_nonoverlapping(
-                                    &*f as *const F as *const u8,
-                                    storage.bytes.as_mut_ptr(),
-                                    $crate::private::size_of::<F>(),
+                                    &*f,
+                                    storage.bytes.as_mut_ptr() as *mut F,
+                                    1,
                                 );
                             }
 
                             let inline_fn = $crate::private::InlineFn {
                                 vtable: unsafe {
                                     $crate::private::transmute(&$crate::private::VTable::< $crate::private::DropFn<INLINE_SIZE>, CallFn< $($($t,)+)? INLINE_SIZE>> {
-                                        drop: |ptr: $crate::private::NonNull<[u8; INLINE_SIZE]>| {
+                                        drop: |ptr: $crate::private::NonNull<[$crate::private::MaybeUninit<u8>; INLINE_SIZE]>| {
                                             $crate::private::drop_in_place(ptr.cast::<F>().as_ptr());
                                         },
-                                        call: |ptr: $crate::private::NonNull<[u8; INLINE_SIZE]> $(, $arg_name: $arg_type)*| $(-> $ret)? {
+                                        call: |ptr: $crate::private::NonNull<[$crate::private::MaybeUninit<u8>; INLINE_SIZE]> $(, $arg_name: $arg_type)*| $(-> $ret)? {
                                             $crate::private_tiny_fn!(@inline_call_cast $fun ptr)($($arg_name),*)
                                         },
                                     })
@@ -366,7 +374,7 @@ macro_rules! tiny_fn {
                         }
                     }
 
-                    $crate::private_tiny_fn!(@call $fun ($($arg_name: $arg_type),*) $( -> $ret)?);
+                    $crate::private_tiny_fn!(@call $fun $(< $($t),+ >)? ($($arg_name: $arg_type),*) $( -> $ret)?);
                 }
 
                 impl<'closure, $($($t,)+)? const INLINE_SIZE: usize> $crate::private::Closure for $name<'closure, $($($t,)+)? INLINE_SIZE> {
@@ -392,7 +400,7 @@ macro_rules! tiny_fn {
                     }
                 }
 
-                $crate::private_tiny_fn!(@call_outer $fun ($($arg_name: $arg_type),*) $( -> $ret)?);
+                $crate::private_tiny_fn!(@call_outer $fun $(< $($t),+ >)? ($($arg_name: $arg_type),*) $( -> $ret)?);
             }
         )*
     };
@@ -436,7 +444,7 @@ mod tests {
     fn test_foo() {
         tiny_fn! {
             pub(crate) struct Foo<T> = FnMut(a: &T, b: T) -> T;
-            pub struct Bar = Fn(b: u8) -> alloc::string::String;
+            pub struct Bar = FnOnce(b: u8) -> alloc::string::String;
         }
 
         let mut x = 3;
