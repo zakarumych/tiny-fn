@@ -16,7 +16,8 @@
 //!
 //! # Example
 //!
-//! ```rust
+//! ```
+//! # use tiny_fn::tiny_fn;
 //! tiny_fn! {
 //!     struct Foo = Fn(a: i32, b: i32) -> i32;
 //! }
@@ -30,7 +31,8 @@
 //!
 //! [`tiny_fn!`] macro supports defining multiple items at once.
 //!
-//! ```rust
+//! ```
+//! # use tiny_fn::tiny_fn;
 //! tiny_fn! {
 //!     struct Foo = Fn(a: i32, b: i32) -> i32;
 //!     struct Bar = Fn() -> String;
@@ -42,7 +44,8 @@
 //! [`tiny_fn!`] macro supports visibility qualifiers.
 //!
 //!
-//! ```rust
+//! ```
+//! # use tiny_fn::tiny_fn;
 //! tiny_fn! {
 //!     pub struct Foo = Fn(a: i32, b: i32) -> i32;
 //!     struct Bar = Fn() -> String;
@@ -54,7 +57,8 @@
 //!
 //! [`tiny_fn!`] macro supports item attributes, including documentation.
 //!
-//! ```rust
+//! ```
+//! # use tiny_fn::tiny_fn;
 //! tiny_fn! {
 //!     /// This is `Foo` wrapper for that takes two `i32`s and return `i32`.
 //!     pub struct Foo = Fn(a: i32, b: i32) -> i32;
@@ -65,7 +69,8 @@
 //!
 //! [`tiny_fn!`] macro can generate closure wrappers for any of the [`Fn*`] traits family.
 //!
-//! ```rust
+//! ```
+//! # use tiny_fn::tiny_fn;
 //! tiny_fn! {
 //!     struct A = Fn();
 //!     struct B = FnMut();
@@ -81,7 +86,8 @@
 //!
 //! Closure wrappers can be declared generic over number of types and those types should be used in function signature.
 //!
-//! ```rust
+//! ```
+//! # use tiny_fn::tiny_fn;
 //! tiny_fn! {
 //!     struct BinOp<T> = Fn(a: T, b: T) -> T;
 //! }
@@ -129,7 +135,7 @@ pub mod private {
     pub use alloc::boxed::Box;
     pub use core::{
         mem::{align_of, size_of, transmute, ManuallyDrop},
-        ptr::{copy_nonoverlapping, drop_in_place, NonNull},
+        ptr::{copy_nonoverlapping, drop_in_place, read, NonNull},
     };
 
     pub trait Closure {
@@ -176,9 +182,9 @@ macro_rules! private_tiny_fn {
                 if self.inner.boxed_if_zero == 0 {
                     (*self.inner.boxed.closure)($($arg_name),*)
                 } else {
-                    let call_fn: unsafe fn(core::ptr::NonNull<[u8; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)? = $crate::private::transmute(self.inner.inline.vtable.call);
+                    let call_fn: unsafe fn($crate::private::NonNull<[u8; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)? = $crate::private::transmute(self.inner.inline.vtable.call);
                     call_fn(
-                        core::ptr::NonNull::from(&self.inner.inline.storage.bytes),
+                        $crate::private::NonNull::from(&self.inner.inline.storage.bytes),
                         $($arg_name),*
                     )
                 }
@@ -215,7 +221,7 @@ macro_rules! private_tiny_fn {
                 if me.inner.boxed_if_zero == 0 {
                     ($crate::private::ManuallyDrop::take(&mut me.inner.boxed).closure)($($arg_name),*)
                 } else {
-                    let call_fn: unsafe fn($crate::private::NonNull<[u8; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)? = $crate::transmute(me.inner.inline.vtable.call);
+                    let call_fn: unsafe fn($crate::private::NonNull<[u8; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)? = $crate::private::transmute(me.inner.inline.vtable.call);
                     call_fn(
                         $crate::private::NonNull::from(&mut (*(*me).inner.inline).storage.bytes),
                         $($arg_name),*
@@ -234,7 +240,7 @@ macro_rules! private_tiny_fn {
     };
 
     (@inline_call_cast FnOnce $ptr:ident) => {
-        core::ptr::read($ptr.cast::<F>().as_ptr())
+        $crate::private::read($ptr.cast::<F>().as_ptr())
     };
 }
 
@@ -307,7 +313,7 @@ macro_rules! tiny_fn {
                                 $crate::private::copy_nonoverlapping(
                                     &*f as *const F as *const u8,
                                     storage.bytes.as_mut_ptr(),
-                                    core::mem::size_of::<F>(),
+                                    $crate::private::size_of::<F>(),
                                 );
                             }
 
@@ -384,9 +390,9 @@ pub mod example {
     //!
     //! let a = "Hello".to_owned();
     //! let b = "world".to_owned();
-    //! let make_string = MakeString::<32>::new(move || format!("{a}, {b}!"));
+    //! let make_string = MakeString::<32>::new(move || format!("{a} {b}!"));
     //!
-    //! assert_eq!(make_string.call(), "Hello, world!");
+    //! assert_eq!(make_string.call(), "Hello world!");
     //! ```
 
     tiny_fn! {
