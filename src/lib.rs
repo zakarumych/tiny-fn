@@ -152,12 +152,11 @@ pub mod private {
         pub bytes: [u8; INLINE_SIZE],
     }
 
+    pub type DropFn<const INLINE_SIZE: usize> = unsafe fn(core::ptr::NonNull<[u8; INLINE_SIZE]>);
+
     #[repr(C)]
     pub struct InlineFn<const INLINE_SIZE: usize> {
-        pub vtable: &'static VTable<
-            unsafe fn(core::ptr::NonNull<[u8; INLINE_SIZE]>),
-            unsafe fn(core::ptr::NonNull<[u8; INLINE_SIZE]>),
-        >,
+        pub vtable: &'static VTable<DropFn<INLINE_SIZE>, DropFn<INLINE_SIZE>>,
         pub storage: InlineStorage<INLINE_SIZE>,
     }
 
@@ -175,17 +174,14 @@ pub mod private {
 #[macro_export]
 macro_rules! private_tiny_fn {
     (@call Fn $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
-        /// Calls wrapped closure
-        /// and returns it result.
-        #[allow(dead_code)]
         pub fn call(&self, $($arg_name: $arg_type),*) $(-> $ret)? {
             unsafe {
-                if self.inner.boxed_if_zero == 0 {
-                    (*self.inner.boxed.closure)($($arg_name),*)
+                if self.boxed_if_zero == 0 {
+                    (*self.boxed.closure)($($arg_name),*)
                 } else {
-                    let call_fn: unsafe fn($crate::private::NonNull<[u8; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)? = $crate::private::transmute(self.inner.inline.vtable.call);
+                    let call_fn: unsafe fn($crate::private::NonNull<[u8; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)? = $crate::private::transmute(self.inline.vtable.call);
                     call_fn(
-                        $crate::private::NonNull::from(&self.inner.inline.storage.bytes),
+                        $crate::private::NonNull::from(&self.inline.storage.bytes),
                         $($arg_name),*
                     )
                 }
@@ -194,17 +190,14 @@ macro_rules! private_tiny_fn {
     };
 
     (@call FnMut $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
-        /// Calls wrapped closure
-        /// and returns it result.
-        #[allow(dead_code)]
         pub fn call(&mut self, $($arg_name: $arg_type),*) $(-> $ret)? {
             unsafe {
-                if self.inner.boxed_if_zero == 0 {
-                    (*(*self.inner.boxed).closure)($($arg_name),*)
+                if self.boxed_if_zero == 0 {
+                    (*(*self.boxed).closure)($($arg_name),*)
                 } else {
-                    let call_fn: unsafe fn($crate::private::NonNull<[u8; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)? = $crate::private::transmute(self.inner.inline.vtable.call);
+                    let call_fn: unsafe fn($crate::private::NonNull<[u8; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)? = $crate::private::transmute(self.inline.vtable.call);
                     call_fn(
-                        $crate::private::NonNull::from(&mut (*self.inner.inline).storage.bytes),
+                        $crate::private::NonNull::from(&mut (*self.inline).storage.bytes),
                         $($arg_name),*
                     )
                 }
@@ -213,22 +206,47 @@ macro_rules! private_tiny_fn {
     };
 
     (@call FnOnce $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
-        /// Calls wrapped closure
-        /// and returns it result.
-        #[allow(dead_code)]
         pub fn call(self, $($arg_name: $arg_type),*) $(-> $ret)? {
             let mut me = $crate::private::ManuallyDrop::new(self);
             unsafe {
-                if me.inner.boxed_if_zero == 0 {
-                    ($crate::private::ManuallyDrop::take(&mut me.inner.boxed).closure)($($arg_name),*)
+                if me.boxed_if_zero == 0 {
+                    ($crate::private::ManuallyDrop::take(&mut me.boxed).closure)($($arg_name),*)
                 } else {
-                    let call_fn: unsafe fn($crate::private::NonNull<[u8; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)? = $crate::private::transmute(me.inner.inline.vtable.call);
+                    let call_fn: CallFn< $($($t,)+)? INLINE_SIZE> = $crate::private::transmute(me.inline.vtable.call);
                     call_fn(
-                        $crate::private::NonNull::from(&mut (*(*me).inner.inline).storage.bytes),
+                        $crate::private::NonNull::from(&mut (*(*me).inline).storage.bytes),
                         $($arg_name),*
                     )
                 }
             }
+        }
+    };
+
+
+    (@call_outer Fn $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
+        /// Calls wrapped closure
+        /// and returns it result.
+        #[allow(dead_code)]
+        pub fn call(&self, $($arg_name: $arg_type),*) $(-> $ret)? {
+            self.inner.call($($arg_name,)*)
+        }
+    };
+
+    (@call_outer FnMut $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
+        /// Calls wrapped closure
+        /// and returns it result.
+        #[allow(dead_code)]
+        pub fn call(&mut self, $($arg_name: $arg_type),*) $(-> $ret)? {
+            self.inner.call($($arg_name,)*)
+        }
+    };
+
+    (@call_outer FnOnce $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
+        /// Calls wrapped closure
+        /// and returns it result.
+        #[allow(dead_code)]
+        pub fn call(self, $($arg_name: $arg_type),*) $(-> $ret)? {
+            self.inner.call($($arg_name,)*)
         }
     };
 
@@ -270,6 +288,8 @@ macro_rules! tiny_fn {
     )*) => {
         $(
             const _: () = {
+                type CallFn< $($($t, )+)? const INLINE_SIZE: usize> = unsafe fn($crate::private::NonNull<[u8; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)?;
+
                 #[repr(C)]
                 struct BoxedFn <'closure $($(, $t)+)?> {
                     zero: usize,
@@ -320,7 +340,7 @@ macro_rules! tiny_fn {
 
                             let inline_fn = $crate::private::InlineFn {
                                 vtable: unsafe {
-                                    $crate::private::transmute(&$crate::private::VTable::<unsafe fn($crate::private::NonNull<[u8; INLINE_SIZE]>), unsafe fn($crate::private::NonNull<[u8; INLINE_SIZE]> $(, $arg_type)*) $(-> $ret)?> {
+                                    $crate::private::transmute(&$crate::private::VTable::< $crate::private::DropFn<INLINE_SIZE>, CallFn< $($($t,)+)? INLINE_SIZE>> {
                                         drop: |ptr: $crate::private::NonNull<[u8; INLINE_SIZE]>| {
                                             $crate::private::drop_in_place(ptr.cast::<F>().as_ptr());
                                         },
@@ -345,6 +365,8 @@ macro_rules! tiny_fn {
                             }
                         }
                     }
+
+                    $crate::private_tiny_fn!(@call $fun ($($arg_name: $arg_type),*) $( -> $ret)?);
                 }
 
                 impl<'closure, $($($t,)+)? const INLINE_SIZE: usize> $crate::private::Closure for $name<'closure, $($($t,)+)? INLINE_SIZE> {
@@ -370,7 +392,7 @@ macro_rules! tiny_fn {
                     }
                 }
 
-                $crate::private_tiny_fn!(@call $fun ($($arg_name: $arg_type),*) $( -> $ret)?);
+                $crate::private_tiny_fn!(@call_outer $fun ($($arg_name: $arg_type),*) $( -> $ret)?);
             }
         )*
     };
