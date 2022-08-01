@@ -152,6 +152,7 @@ pub mod private {
         pub bytes: [u8; INLINE_SIZE],
     }
 
+    #[repr(C)]
     pub struct InlineFn<const INLINE_SIZE: usize> {
         pub vtable: &'static VTable<
             unsafe fn(core::ptr::NonNull<[u8; INLINE_SIZE]>),
@@ -383,9 +384,11 @@ pub mod example {
     //! # Usage
     //!
     //! ```
+    //! # extern crate alloc;
     //! # use tiny_fn::example::*;
+    //! # use alloc::{borrow::ToOwned, format};
     //! #
-    //! let binop = BinOp::<_>::new(|a: i32, b| a + b);
+    //! let binop: BinOp::<i32, 24> = BinOp::new(|a, b| a + b);
     //! assert_eq!(3, binop.call(1, 2));
     //!
     //! let a = "Hello".to_owned();
