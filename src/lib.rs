@@ -1,16 +1,17 @@
 //!
-//! Did you ever boxed closure and wondered:
+//! Have you ever being placing closure into [`Box<dyn Fn(...)>`] and wondered:
 //! "Is there a crate to avoid heap allocations for small closures?"
 //!
-//! Well, wonder no more, this is the crate.
+//! Wonder no more, this is the crate.
 //!
 //! # How to use
 //!
-//! This crate provides declarative macro [`tiny_fn!`] which generates closure wrappers
-//! to store closures without original closure type.
+//! This crate provides declarative macro [`tiny_fn!`] to generate closure wrappers
+//! able store closure erasing its type.
+//!
 //! Generated closure wrappers avoid heap allocations when wrapped closure fits inline storage.
 //!
-//! The macro is designed to be easy to write with simple syntax that mostly reuse constructs existing in Rust.
+//! The macro is designed to be easy to write with simple syntax that mostly reuse constructs already existing in Rust.\
 //! Behavior of generated wrappers should be obvious from the first glance.
 //!
 //! # Example
@@ -23,8 +24,8 @@
 //!
 //! Macro expands to `struct Foo` definition with two public methods.
 //!
-//! * `Foo::new` accepts any value that implements `Fn(i32, i32) -> i32` and returns new instance of `Foo`.
-//! * `Foo::call` follows signature specified to the macro. e.g. `Foo::call` accepts `a: i32` and `b: i32` and returns `i32`.\
+//! * `Foo::new` accepts any value that implements [`Fn(i32, i32) -> i32`] and returns new instance of `Foo`.
+//! * `Foo::call` follows signature specified to the macro. e.g. `Foo::call` accepts `a: i32` and `b: i32` and returns [`i32`].\
 //!   Plainly `Foo::call` calls closure from which this instance of `Foo` was crated using `a` and `b` arguments at the same positions.
 //!
 //! [`tiny_fn!`] macro supports defining multiple items at once.
@@ -60,9 +61,9 @@
 //! }
 //! ```
 //!
-//! # Fn* traits family
+//! # [`Fn*`] traits family
 //!
-//! [`tiny_fn!`] macro can generate closure wrappers for any of the `Fn*` traits family.
+//! [`tiny_fn!`] macro can generate closure wrappers for any of the [`Fn*`] traits family.
 //!
 //! ```rust
 //! tiny_fn! {
@@ -87,7 +88,7 @@
 //! ```
 //!
 //! Here `BinOp` is generic over `T`.\
-//! `BiOp::<T>::new` accepts closures bounds by `Fn(T, T) -> T`.
+//! `BiOp::<T>::new` accepts closures bounds by [`Fn(T, T) -> T`].
 //!
 //! Notably `T` is not constrained by traits in `BinOp`.\
 //! Closure wrappers only move arguments and return values, so they don't need to know anything else about the type.
@@ -100,8 +101,12 @@
 //! * Constant `INLINE_SIZE: usize`.\
 //!   Closures with size up to `INLINE_SIZE` and alignment requirement not exceeding [`tiny_fn::ALIGN`] will be inlined into wrapper structure directly.\
 //!   Otherwise heap allocation will occur.\
-//!   `INLINE_SIZE` parameter is defaulted to `tiny_fn::DEFAULT_INLINE_SIZE` which is `24` currently.
+//!   `INLINE_SIZE` parameter is defaulted to [`tiny_fn::DEFAULT_INLINE_SIZE`].
 //!
+//! [`Box<dyn Fn(...)>`]: https://doc.rust-lang.org/std/ops/trait.Fn.html
+//! [`Fn(i32, i32) -> i32`]: https://doc.rust-lang.org/std/ops/trait.Fn.html
+//! [`Fn*`]: https://doc.rust-lang.org/std/ops/trait.Fn.html
+//! [`Fn(T, T) -> T`]: https://doc.rust-lang.org/std/ops/trait.Fn.html
 //! [`tiny_fn::ALIGN`]: `ALIGN`
 //! [`tiny_fn::DEFAULT_INLINE_SIZE`]: `DEFAULT_INLINE_SIZE`
 
@@ -157,6 +162,80 @@ pub mod private {
             }
         }
     }
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! private_tiny_fn {
+    (@call Fn $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
+        /// Calls wrapped closure
+        /// and returns it result.
+        #[allow(dead_code)]
+        pub fn call(&self, $($arg_name: $arg_type),*) $(-> $ret)? {
+            unsafe {
+                if self.inner.boxed_if_zero == 0 {
+                    (*self.inner.boxed.closure)($($arg_name),*)
+                } else {
+                    let call_fn: unsafe fn(core::ptr::NonNull<[u8; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)? = $crate::private::transmute(self.inner.inline.vtable.call);
+                    call_fn(
+                        core::ptr::NonNull::from(&self.inner.inline.storage.bytes),
+                        $($arg_name),*
+                    )
+                }
+            }
+        }
+    };
+
+    (@call FnMut $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
+        /// Calls wrapped closure
+        /// and returns it result.
+        #[allow(dead_code)]
+        pub fn call(&mut self, $($arg_name: $arg_type),*) $(-> $ret)? {
+            unsafe {
+                if self.inner.boxed_if_zero == 0 {
+                    (*(*self.inner.boxed).closure)($($arg_name),*)
+                } else {
+                    let call_fn: unsafe fn($crate::private::NonNull<[u8; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)? = $crate::private::transmute(self.inner.inline.vtable.call);
+                    call_fn(
+                        $crate::private::NonNull::from(&mut (*self.inner.inline).storage.bytes),
+                        $($arg_name),*
+                    )
+                }
+            }
+        }
+    };
+
+    (@call FnOnce $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
+        /// Calls wrapped closure
+        /// and returns it result.
+        #[allow(dead_code)]
+        pub fn call(self, $($arg_name: $arg_type),*) $(-> $ret)? {
+            let mut me = $crate::private::ManuallyDrop::new(self);
+            unsafe {
+                if me.inner.boxed_if_zero == 0 {
+                    ($crate::private::ManuallyDrop::take(&mut me.inner.boxed).closure)($($arg_name),*)
+                } else {
+                    let call_fn: unsafe fn($crate::private::NonNull<[u8; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)? = $crate::transmute(me.inner.inline.vtable.call);
+                    call_fn(
+                        $crate::private::NonNull::from(&mut (*(*me).inner.inline).storage.bytes),
+                        $($arg_name),*
+                    )
+                }
+            }
+        }
+    };
+
+    (@inline_call_cast Fn $ptr:ident) => {
+        (*$ptr.cast::<F>().as_ptr())
+    };
+
+    (@inline_call_cast FnMut $ptr:ident) => {
+        (*$ptr.cast::<F>().as_ptr())
+    };
+
+    (@inline_call_cast FnOnce $ptr:ident) => {
+        core::ptr::read($ptr.cast::<F>().as_ptr())
+    };
 }
 
 /// Defines new structure type.
@@ -239,7 +318,7 @@ macro_rules! tiny_fn {
                                             $crate::private::drop_in_place(ptr.cast::<F>().as_ptr());
                                         },
                                         call: |ptr: $crate::private::NonNull<[u8; INLINE_SIZE]> $(, $arg_name: $arg_type)*| $(-> $ret)? {
-                                            $crate::tiny_fn!(@inline_call_cast $fun ptr)($($arg_name),*)
+                                            $crate::private_tiny_fn!(@inline_call_cast $fun ptr)($($arg_name),*)
                                         },
                                     })
                                 },
@@ -284,79 +363,9 @@ macro_rules! tiny_fn {
                     }
                 }
 
-                $crate::tiny_fn!(@call $fun ($($arg_name: $arg_type),*) $( -> $ret)?);
+                $crate::private_tiny_fn!(@call $fun ($($arg_name: $arg_type),*) $( -> $ret)?);
             }
         )*
-    };
-
-    (@call Fn $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
-        /// Calls wrapped closure
-        /// and returns it result.
-        #[allow(dead_code)]
-        pub fn call(&self, $($arg_name: $arg_type),*) $(-> $ret)? {
-            unsafe {
-                if self.inner.boxed_if_zero == 0 {
-                    (*self.inner.boxed.closure)($($arg_name),*)
-                } else {
-                    let call_fn: unsafe fn(core::ptr::NonNull<[u8; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)? = $crate::private::transmute(self.inner.inline.vtable.call);
-                    call_fn(
-                        core::ptr::NonNull::from(&self.inner.inline.storage.bytes),
-                        $($arg_name),*
-                    )
-                }
-            }
-        }
-    };
-
-    (@call FnMut $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
-        /// Calls wrapped closure
-        /// and returns it result.
-        #[allow(dead_code)]
-        pub fn call(&mut self, $($arg_name: $arg_type),*) $(-> $ret)? {
-            unsafe {
-                if self.inner.boxed_if_zero == 0 {
-                    (*(*self.inner.boxed).closure)($($arg_name),*)
-                } else {
-                    let call_fn: unsafe fn($crate::private::NonNull<[u8; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)? = $crate::private::transmute(self.inner.inline.vtable.call);
-                    call_fn(
-                        $crate::private::NonNull::from(&mut (*self.inner.inline).storage.bytes),
-                        $($arg_name),*
-                    )
-                }
-            }
-        }
-    };
-
-    (@call FnOnce $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
-        /// Calls wrapped closure
-        /// and returns it result.
-        #[allow(dead_code)]
-        pub fn call(self, $($arg_name: $arg_type),*) $(-> $ret)? {
-            let mut me = $crate::private::ManuallyDrop::new(self);
-            unsafe {
-                if me.inner.boxed_if_zero == 0 {
-                    ($crate::private::ManuallyDrop::take(&mut me.inner.boxed).closure)($($arg_name),*)
-                } else {
-                    let call_fn: unsafe fn($crate::private::NonNull<[u8; INLINE_SIZE]>, $($arg_type),*) $( -> $ret)? = $crate::transmute(me.inner.inline.vtable.call);
-                    call_fn(
-                        $crate::private::NonNull::from(&mut (*(*me).inner.inline).storage.bytes),
-                        $($arg_name),*
-                    )
-                }
-            }
-        }
-    };
-
-    (@inline_call_cast Fn $ptr:ident) => {
-        (*$ptr.cast::<F>().as_ptr())
-    };
-
-    (@inline_call_cast FnMut $ptr:ident) => {
-        (*$ptr.cast::<F>().as_ptr())
-    };
-
-    (@inline_call_cast FnOnce $ptr:ident) => {
-        core::ptr::read($ptr.cast::<F>().as_ptr())
     };
 }
 
