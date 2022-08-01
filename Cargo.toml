@@ -2,7 +2,19 @@
 name = "tiny-fn"
 version = "0.1.0"
 edition = "2021"
+authors = ["Zakarum <zakarumych@ya.ru>"]
+license = "MIT OR Apache-2.0"
+documentation = "https://docs.rs/tiny-fn"
+homepage = "https://github.com/zakarumych/tiny-fn"
+repository = "https://github.com/zakarumych/tiny-fn"
+readme = "README.md"
+description = "Type erased closures on stack"
+categories = ["rust-patterns", "memory-management", "no-std"]
+keywords = ["no-std", "memory", "data-structures", "macro"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+example = []
 
-[dependencies]
+[package.metadata.docs.rs]
+rustdoc-args = ["--cfg", "docsrs"]
+features = ["example"]
