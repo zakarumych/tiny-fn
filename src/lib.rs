@@ -337,13 +337,9 @@ macro_rules! tiny_fn {
                                 bytes: [$crate::private::MaybeUninit::uninit(); INLINE_SIZE],
                             };
 
-                            let f = $crate::private::ManuallyDrop::new(f);
                             unsafe {
-                                $crate::private::copy_nonoverlapping(
-                                    &*f,
-                                    storage.bytes.as_mut_ptr() as *mut F,
-                                    1,
-                                );
+                                let storage_f = storage.bytes.as_mut_ptr() as *mut $crate::private::MaybeUninit<F>;
+                                (*storage_f).write(f);
                             }
 
                             let inline_fn = $crate::private::InlineFn {
