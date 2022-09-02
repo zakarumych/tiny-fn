@@ -276,14 +276,16 @@ macro_rules! tiny_fn {
         $fun:ident ($(
             $arg_name:ident: $arg_type:ty
         ),* $(,)?)
-        $( -> $ret:ty)?;
+        $( -> $ret:ty)?
+        $(| $(+ $markers:path)+)?
+        ;
     )*) => {
         $(
             const _: () = {
                 type CallFn< $($($t, )+)? const INLINE_SIZE: usize> = unsafe fn($crate::private::StoragePtr<INLINE_SIZE>, $($arg_type),*) $( -> $ret)?;
 
                 struct BoxedFn <'closure $($(, $t)+)?> {
-                    closure: $crate::private::Box<dyn $fun($($arg_type),*) $(-> $ret)? + 'closure>,
+                    closure: $crate::private::Box<dyn $fun($($arg_type),*) $(-> $ret)? $($(+ $markers)+)? + 'closure>,
                 }
 
                 #[doc(hidden)]
@@ -314,7 +316,7 @@ macro_rules! tiny_fn {
                 impl<'closure, $($($t,)+)? const INLINE_SIZE: usize> TinyClosure<'closure, $($($t,)+)? INLINE_SIZE> {
                     fn new<F>(f: F) -> Self
                     where
-                        F: $fun ($($arg_type),*) $( -> $ret)? + 'closure,
+                        F: $fun ($($arg_type),*) $( -> $ret)? $($(+ $markers)+)? + 'closure,
                     {
                         let size_fits = $crate::private::size_of::<F>() <= INLINE_SIZE;
                         let align_fits = $crate::private::align_of::<F>() <= $crate::ALIGN;
@@ -378,7 +380,7 @@ macro_rules! tiny_fn {
                 #[inline]
                 pub fn new<F>(f: F) -> Self
                 where
-                    F: $fun ($($arg_type),*) $( -> $ret)? + 'closure,
+                    F: $fun ($($arg_type),*) $( -> $ret)? $($(+ $markers)+)? + 'closure,
                 {
                     $name {
                         inner: << $name< $($($t,)+)? INLINE_SIZE> as $crate::private::Closure>::Inner>::new(f),
@@ -427,8 +429,10 @@ pub mod example {
 mod tests {
     #[test]
     fn test_foo() {
+        use alloc::rc::Rc;
+
         tiny_fn! {
-            pub(crate) struct Foo<T> = FnMut(a: &T, b: T) -> T;
+            pub(crate) struct Foo<T> = FnMut(a: &T, b: T) -> T | + Send + Sync;
             pub struct Bar = FnOnce(b: u8) -> alloc::string::String;
         }
 
@@ -443,5 +447,8 @@ mod tests {
         assert_eq!(13, foo.call(&3, 4));
 
         assert_eq!("3", bar.call(3));
+
+        fn assert_send<T: Send>() {}
+        assert_send::<Foo<Rc<u8>>>();
     }
 }
