@@ -163,7 +163,7 @@ pub mod private {
 #[macro_export]
 macro_rules! private_tiny_fn {
     (@call Fn $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
-        pub fn call(&self, $($arg_name: $arg_type),*) $(-> $ret)? {
+        fn call(&self, $($arg_name: $arg_type),*) $(-> $ret)? {
             unsafe {
                 match self.vtable {
                     None => (*self.payload.boxed.closure)($($arg_name),*),
@@ -180,7 +180,7 @@ macro_rules! private_tiny_fn {
     };
 
     (@call FnMut $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
-        pub fn call(&mut self, $($arg_name: $arg_type),*) $(-> $ret)? {
+        fn call(&mut self, $($arg_name: $arg_type),*) $(-> $ret)? {
             unsafe {
                 match self.vtable {
                     None => (*(*self.payload.boxed).closure)($($arg_name),*),
@@ -197,7 +197,7 @@ macro_rules! private_tiny_fn {
     };
 
     (@call FnOnce $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
-        pub fn call(self, $($arg_name: $arg_type),*) $(-> $ret)? {
+        fn call(self, $($arg_name: $arg_type),*) $(-> $ret)? {
             let mut me = $crate::private::ManuallyDrop::new(self);
             unsafe {
                 match me.vtable {
@@ -289,7 +289,7 @@ macro_rules! tiny_fn {
                 }
 
                 #[doc(hidden)]
-                pub union TinyClosurePayload<'closure, $($($t,)+)? const INLINE_SIZE: usize> {
+                union TinyClosurePayload<'closure, $($($t,)+)? const INLINE_SIZE: usize> {
                     inline: $crate::private::InlineStorage<INLINE_SIZE>,
                     boxed: $crate::private::ManuallyDrop<BoxedFn<'closure $($(, $t)+)?>>,
                 }
@@ -377,6 +377,8 @@ macro_rules! tiny_fn {
             }
 
             impl<'closure, $($($t,)+)? const INLINE_SIZE: usize> $name<'closure, $($($t,)+)? INLINE_SIZE> {
+                /// Constructs new instance of wrapper from specified closure.
+                /// Closure will be boxed if it doesn't fit inline storage.
                 #[inline]
                 pub fn new<F>(f: F) -> Self
                 where
