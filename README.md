@@ -2,9 +2,7 @@
 
 [![crates](https://img.shields.io/crates/v/tiny-fn.svg?style=for-the-badge&label=tiny-fn)](https://crates.io/crates/tiny-fn)
 [![docs](https://img.shields.io/badge/docs.rs-tiny--fn-66c2a5?style=for-the-badge&labelColor=555555&logoColor=white)](https://docs.rs/tiny-fn)
-[![actions](https://img.shields.io/github/workflow/status/zakarumych/tiny-fn/badge/master?style=for-the-badge)](https://github.com/zakarumych/tiny-fn/actions?query=workflow%3ARust)
 [![MIT/Apache](https://img.shields.io/badge/license-MIT%2FApache-blue.svg?style=for-the-badge)](COPYING)
-![loc](https://img.shields.io/tokei/lines/github/zakarumych/tiny-fn?style=for-the-badge)
 
 # Motivation
 
@@ -29,6 +27,9 @@ Behavior of generated wrappers should be obvious from the first glance.
 tiny_fn! {
     struct Foo = Fn(a: i32, b: i32) -> i32;
 }
+
+let foo: Foo = Foo::new(|a, b| a + b);
+assert_eq!(foo.call(1, 2), 3);
 ```
 
 Macro expands to `struct Foo` definition with two public methods.
@@ -44,6 +45,12 @@ tiny_fn! {
     struct Foo = Fn(a: i32, b: i32) -> i32;
     struct Bar = Fn() -> String;
 }
+
+let foo: Foo = Foo::new(|a, b| a + b);
+let bar: Bar = Bar::new(|| "Hello, World!".to_string());
+
+assert_eq!(foo.call(1, 2), 3);
+assert_eq!(bar.call(), "Hello, World!");
 ```
 
 # Visibility
@@ -79,6 +86,21 @@ tiny_fn! {
     struct B = FnMut();
     struct C = FnOnce();
 }
+
+let a = 42;
+let a: A = A::new(|| println!("{}", a));
+a.call();
+a.call();
+
+let mut b = 42;
+let mut b: B = B::new(|| b += 1);
+b.call();
+b.call();
+
+let c = String::from("Hello, World!");
+let c: C = C::new(move || println!("{}", c));
+c.call();
+// c.call(); // This will not compile, because `C` can be called only once.
 ```
 
 * `A` can wrap only closures that are callable when immutably borrowed. And so `A::call` takes `&self`.
@@ -93,6 +115,11 @@ Closure wrappers can be declared generic over number of types and those types sh
 tiny_fn! {
     struct BinOp<T> = Fn(a: T, b: T) -> T;
 }
+
+let add: BinOp<i32> = BinOp::new(|a, b| a + b);
+let mul: BinOp<i32> = BinOp::new(|a, b| a * b);
+
+assert_eq!(mul.call(add.call(1, 2), 3), 9);
 ```
 
 Here `BinOp` is generic over `T`.\
@@ -100,6 +127,27 @@ Here `BinOp` is generic over `T`.\
 
 Notably `T` is not constrained by traits in `BinOp`.\
 Closure wrappers only move arguments and return values, so they don't need to know anything else about the type.
+
+# Markers
+
+Closure wrappers can be declared with marker traits.
+Simply add `|` and list of `+` prefixed marker traits after function signature.
+In Fn traits family `|` symbol is not used, but here it is required due to declarative macro limitations.
+
+They will be added to bounds on contained types.
+And if autotraits, they will be implemented for the wrapper type as well.
+
+```rust
+tiny_fn! {
+    struct Foo = Fn(a: i32, b: i32) -> i32 | + Send;
+}
+
+let foo: Foo = Foo::new(|a, b| a + b);
+
+std::thread::spawn(move || {
+  foo.call();
+});
+```
 
 # Special generic parameters
 
