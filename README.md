@@ -145,7 +145,7 @@ tiny_fn! {
 let foo: Foo = Foo::new(|a, b| a + b);
 
 std::thread::spawn(move || {
-  foo.call();
+  foo.call(1, 2);
 });
 ```
 
