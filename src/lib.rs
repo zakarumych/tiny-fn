@@ -212,13 +212,13 @@ pub mod private {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! private_tiny_fn {
-    (@call Fn $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
-        fn call(&self, $($arg_name: $arg_type),*) $(-> $ret)? {
+    (@call $(<$($hlt:lifetime),+>)? Fn $(< $($lt:lifetime,)*  $($t:ident,)* >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
+        fn call $(<$($hlt),+>)? (&self, $($arg_name: $arg_type),*) $(-> $ret)? {
             unsafe {
                 match self.vtable {
                     None => (*self.payload.boxed.closure)($($arg_name),*),
                     Some(vtable) => {
-                        let call_fn: CallFn< $($($t,)+)? INLINE_SIZE> = $crate::private::transmute(vtable.call);
+                        let call_fn: CallFn< $($($lt,)* $($t,)*)? INLINE_SIZE> = $crate::private::transmute(vtable.call);
                         call_fn(
                             $crate::private::NonNull::from(&self.payload.inline),
                             $($arg_name),*
@@ -229,13 +229,13 @@ macro_rules! private_tiny_fn {
         }
     };
 
-    (@call FnMut $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
-        fn call(&mut self, $($arg_name: $arg_type),*) $(-> $ret)? {
+    (@call $(<$($hlt:lifetime),+>)? FnMut $(< $($lt:lifetime,)*  $($t:ident,)* >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
+        fn call $(<$($hlt),+>)? (&mut self, $($arg_name: $arg_type),*) $(-> $ret)? {
             unsafe {
                 match self.vtable {
                     None => (*(*self.payload.boxed).closure)($($arg_name),*),
                     Some(vtable) => {
-                        let call_fn: CallFn< $($($t,)+)? INLINE_SIZE> = $crate::private::transmute(vtable.call);
+                        let call_fn: CallFn< $($($lt,)* $($t,)*)? INLINE_SIZE> = $crate::private::transmute(vtable.call);
                         call_fn(
                             $crate::private::NonNull::from(&mut self.payload.inline),
                             $($arg_name),*
@@ -246,14 +246,14 @@ macro_rules! private_tiny_fn {
         }
     };
 
-    (@call FnOnce $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
-        fn call(self, $($arg_name: $arg_type),*) $(-> $ret)? {
+    (@call $(<$($hlt:lifetime),+>)? FnOnce $(< $($lt:lifetime,)*  $($t:ident,)* >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
+        fn call $(<$($hlt),+>)? (self, $($arg_name: $arg_type),*) $(-> $ret)? {
             let mut me = $crate::private::ManuallyDrop::new(self);
             unsafe {
                 match me.vtable {
                     None => ($crate::private::ManuallyDrop::take(&mut me.payload.boxed).closure)($($arg_name),*),
                     Some(vtable) => {
-                        let call_fn: CallFn< $($($t,)+)? INLINE_SIZE> = $crate::private::transmute(vtable.call);
+                        let call_fn: CallFn< $($($lt,)* $($t,)*)? INLINE_SIZE> = $crate::private::transmute(vtable.call);
                         call_fn(
                             $crate::private::NonNull::from(&mut (*me).payload.inline),
                             $($arg_name),*
@@ -265,29 +265,29 @@ macro_rules! private_tiny_fn {
     };
 
 
-    (@call_outer Fn $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
+    (@call_outer $(<$($hlt:lifetime),+>)? Fn $(< $($lt:lifetime,)*  $($t:ident,)* >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
         /// Calls wrapped closure
         /// and returns it result.
         #[allow(dead_code)]
-        pub fn call(&self, $($arg_name: $arg_type),*) $(-> $ret)? {
+        pub fn call $(<$($hlt),+>)? (&self, $($arg_name: $arg_type),*) $(-> $ret)? {
             self.inner.call($($arg_name,)*)
         }
     };
 
-    (@call_outer FnMut $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
+    (@call_outer $(<$($hlt:lifetime),+>)? FnMut $(< $($lt:lifetime,)*  $($t:ident,)* >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
         /// Calls wrapped closure
         /// and returns it result.
         #[allow(dead_code)]
-        pub fn call(&mut self, $($arg_name: $arg_type),*) $(-> $ret)? {
+        pub fn call $(<$($hlt),+>)? (&mut self, $($arg_name: $arg_type),*) $(-> $ret)? {
             self.inner.call($($arg_name,)*)
         }
     };
 
-    (@call_outer FnOnce $(< $($t:ident),+ >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
+    (@call_outer $(<$($hlt:lifetime),+>)? FnOnce $(< $($lt:lifetime,)*  $($t:ident,)* >)? ($($arg_name:ident: $arg_type:ty),* $(,)?) $( -> $ret:ty)?) => {
         /// Calls wrapped closure
         /// and returns it result.
         #[allow(dead_code)]
-        pub fn call(self, $($arg_name: $arg_type),*) $(-> $ret)? {
+        pub fn call $(<$($hlt),+>)? (self, $($arg_name: $arg_type),*) $(-> $ret)? {
             self.inner.call($($arg_name,)*)
         }
     };
@@ -322,7 +322,8 @@ macro_rules! private_tiny_fn {
 macro_rules! tiny_fn {
     ($(
         $(#[$meta:meta])*
-        $vis:vis struct $name:ident $(< $($t:ident),+ >)? =
+        $vis:vis struct $name:ident $(< $($lt:lifetime),* $(,)? $($t:ident),* >)? =
+        $(<$($hlt:lifetime),+>)?
         $fun:ident ($(
             $arg_name:ident: $arg_type:ty
         ),* $(,)?)
@@ -332,24 +333,24 @@ macro_rules! tiny_fn {
     )*) => {
         $(
             const _: () = {
-                type CallFn< $($($t, )+)? const INLINE_SIZE: usize> = unsafe fn($crate::private::StoragePtr<INLINE_SIZE>, $($arg_type),*) $( -> $ret)?;
+                type CallFn< $($($lt,)* $($t,)*)? const INLINE_SIZE: usize> = $(for<$($hlt),+>)? unsafe fn($crate::private::StoragePtr<INLINE_SIZE>, $($arg_type),*) $( -> $ret)?;
 
-                struct BoxedFn <'closure $($(, $t)+)?> {
-                    closure: $crate::private::Box<dyn $fun($($arg_type),*) $(-> $ret)? $($(+ $markers)+)? + 'closure>,
+                struct BoxedFn <'closure $( $(, $lt)* $(, $t)*)?> {
+                    closure: $crate::private::Box<dyn $(for<$($hlt),+>)? $fun($($arg_type),*) $(-> $ret)? $($(+ $markers)+)? + 'closure>,
                 }
 
                 #[doc(hidden)]
-                union TinyClosurePayload<'closure, $($($t,)+)? const INLINE_SIZE: usize> {
+                union TinyClosurePayload<'closure, $($($lt,)* $($t,)*)? const INLINE_SIZE: usize> {
                     inline: $crate::private::InlineStorage<INLINE_SIZE>,
-                    boxed: $crate::private::ManuallyDrop<BoxedFn<'closure $($(, $t)+)?>>,
+                    boxed: $crate::private::ManuallyDrop<BoxedFn<'closure $($(, $lt)* $(, $t)*)?>>,
                 }
 
-                pub struct TinyClosure<'closure, $($($t,)+)? const INLINE_SIZE: usize> {
+                pub struct TinyClosure<'closure, $($($lt,)* $($t,)*)? const INLINE_SIZE: usize> {
                     vtable: Option<&'static $crate::private::VTable>,
-                    payload: TinyClosurePayload<'closure, $($($t,)+)? INLINE_SIZE>,
+                    payload: TinyClosurePayload<'closure, $($($lt,)* $($t,)*)? INLINE_SIZE>,
                 }
 
-                impl<'closure, $($($t,)+)? const INLINE_SIZE: usize> Drop for TinyClosure<'closure, $($($t,)+)? INLINE_SIZE> {
+                impl<'closure, $($($lt,)* $($t,)*)? const INLINE_SIZE: usize> Drop for TinyClosure<'closure, $($($lt,)* $($t,)*)? INLINE_SIZE> {
                     fn drop(&mut self) {
                         unsafe {
                             match self.vtable {
@@ -363,10 +364,10 @@ macro_rules! tiny_fn {
                     }
                 }
 
-                impl<'closure, $($($t,)+)? const INLINE_SIZE: usize> TinyClosure<'closure, $($($t,)+)? INLINE_SIZE> {
+                impl<'closure, $($($lt,)* $($t,)*)? const INLINE_SIZE: usize> TinyClosure<'closure, $($($lt,)* $($t,)*)? INLINE_SIZE> {
                     fn new<F>(f: F) -> Self
                     where
-                        F: $fun ($($arg_type),*) $( -> $ret)? $($(+ $markers)+)? + 'closure,
+                        F: $(for<$($hlt),+>)? $fun ($($arg_type),*) $( -> $ret)? $($(+ $markers)+)? + 'closure,
                     {
                         let size_fits = $crate::private::size_of::<F>() <= INLINE_SIZE;
                         let align_fits = $crate::private::align_of::<F>() <= $crate::ALIGN;
@@ -382,13 +383,13 @@ macro_rules! tiny_fn {
                             }
 
                             let vtable = unsafe {
-                                $crate::private::transmute(&$crate::private::VTable::< $crate::private::DropFn<INLINE_SIZE>, CallFn< $($($t,)+)? INLINE_SIZE>> {
+                                $crate::private::transmute(&$crate::private::VTable::< $crate::private::DropFn<INLINE_SIZE>, CallFn< $($($lt,)* $($t,)*)? INLINE_SIZE>> {
                                     drop: |ptr: $crate::private::StoragePtr<INLINE_SIZE>| {
                                         $crate::private::drop_in_place(ptr.cast::<F>().as_ptr());
                                     },
-                                    call: |ptr: $crate::private::StoragePtr<INLINE_SIZE> $(, $arg_name: $arg_type)*| $(-> $ret)? {
+                                    call: |ptr: $crate::private::StoragePtr<INLINE_SIZE> $(, $arg_name)*| {
                                         $crate::private_tiny_fn!(@inline_call_cast $fun ptr)($($arg_name),*)
-                                    },
+                                    }
                                 })
                             };
                             TinyClosure {
@@ -411,35 +412,35 @@ macro_rules! tiny_fn {
                         }
                     }
 
-                    $crate::private_tiny_fn!(@call $fun $(< $($t),+ >)? ($($arg_name: $arg_type),*) $( -> $ret)?);
+                    $crate::private_tiny_fn!(@call $(<$($hlt),+>)? $fun $(< $($lt,)*  $($t,),* >)? ($($arg_name: $arg_type),*) $( -> $ret)?);
                 }
 
-                impl<'closure, $($($t,)+)? const INLINE_SIZE: usize> $crate::private::Closure for $name<'closure, $($($t,)+)? INLINE_SIZE> {
-                    type Inner = TinyClosure<'closure, $($($t,)+)? INLINE_SIZE>;
+                impl<'closure, $($($lt,)* $($t,)*)? const INLINE_SIZE: usize> $crate::private::Closure for $name<'closure, $($($lt,)* $($t,)*)? INLINE_SIZE> {
+                    type Inner = TinyClosure<'closure, $($($lt,)* $($t,)*)? INLINE_SIZE>;
                 }
             };
 
             #[repr(transparent)]
             $(#[$meta])*
-            $vis struct $name<'closure, $($($t,)+)? const INLINE_SIZE: usize = { $crate::DEFAULT_INLINE_SIZE }> {
+            $vis struct $name<'closure, $($($lt,)* $($t,)*)? const INLINE_SIZE: usize = { $crate::DEFAULT_INLINE_SIZE }> {
                 #[allow(dead_code)]
-                inner: < $name<'closure, $($($t,)+)? INLINE_SIZE> as $crate::private::Closure>::Inner,
+                inner: < $name<'closure, $($($lt,)* $($t,)*)? INLINE_SIZE> as $crate::private::Closure>::Inner,
             }
 
-            impl<'closure, $($($t,)+)? const INLINE_SIZE: usize> $name<'closure, $($($t,)+)? INLINE_SIZE> {
+            impl<'closure, $($($lt,)* $($t,)*)? const INLINE_SIZE: usize> $name<'closure, $($($lt,)* $($t,)*)? INLINE_SIZE> {
                 /// Constructs new instance of wrapper from specified closure.
                 /// Closure will be boxed if it doesn't fit inline storage.
                 #[inline]
                 pub fn new<F>(f: F) -> Self
                 where
-                    F: $fun ($($arg_type),*) $( -> $ret)? $($(+ $markers)+)? + 'closure,
+                    F: $(for<$($hlt),+>)? $fun ($($arg_type),*) $( -> $ret)? $($(+ $markers)+)? + 'closure,
                 {
                     $name {
-                        inner: << $name< $($($t,)+)? INLINE_SIZE> as $crate::private::Closure>::Inner>::new(f),
+                        inner: < < $name < $($($t,)*)? INLINE_SIZE > as $crate::private::Closure>::Inner>::new(f),
                     }
                 }
 
-                $crate::private_tiny_fn!(@call_outer $fun $(< $($t),+ >)? ($($arg_name: $arg_type),*) $( -> $ret)?);
+                $crate::private_tiny_fn!(@call_outer $(<$($hlt),+>)? $fun $(< $($lt,)*  $($t,)* >)? ($($arg_name: $arg_type),*) $( -> $ret)?);
             }
         )*
     };
@@ -479,13 +480,17 @@ pub mod example {
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::String;
+
     #[test]
-    fn test_foo() {
+    fn test() {
         use alloc::rc::Rc;
 
         tiny_fn! {
             pub(crate) struct Foo<T> = FnMut(a: &T, b: T) -> T | + Send + Sync;
             pub struct Bar = FnOnce(b: u8) -> alloc::string::String;
+            pub struct Baz<'a> = Fn(a: &'a str) -> &'a str | + Send;
+            pub struct Hrl = <'a> Fn(a: &'a str) -> &'a str | + Send;
         }
 
         let mut x = 3;
@@ -502,5 +507,19 @@ mod tests {
 
         fn assert_send<T: Send>() {}
         assert_send::<Foo<Rc<u8>>>();
+        let s = String::new();
+
+        let baz: Baz = Baz::new(|a: &str| a);
+
+        let _: &'static str = baz.call("Hello, World!");
+
+        // let _: &str = baz.call(&s); // This will not compile, because `s` is not `'static` and `baz` is bound to `'static` lifetime.
+
+        let mut hlp: Hrl = Hrl::new(|a: &str| a);
+
+        let _: &'static str = hlp.call("Hello, World!");
+
+        hlp = Hrl::new(|_| "foo");
+        let _: &str = hlp.call(&s); // This compiles because argument's lifetime is not bound by the type.
     }
 }
